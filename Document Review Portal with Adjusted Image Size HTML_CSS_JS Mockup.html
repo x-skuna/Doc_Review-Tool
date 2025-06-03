@@ -1,0 +1,926 @@
+<script type="text/javascript">
+        var gk_isXlsx = false;
+        var gk_xlsxFileLookup = {};
+        var gk_fileData = {};
+        function filledCell(cell) {
+          return cell !== '' && cell != null;
+        }
+        function loadFileData(filename) {
+        if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
+            try {
+                var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
+                var firstSheetName = workbook.SheetNames[0];
+                var worksheet = workbook.Sheets[firstSheetName];
+
+                // Convert sheet to JSON to filter blank rows
+                var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
+                // Filter out blank rows (rows where all cells are empty, null, or undefined)
+                var filteredData = jsonData.filter(row => row.some(filledCell));
+
+                // Heuristic to find the header row by ignoring rows with fewer filled cells than the next row
+                var headerRowIndex = filteredData.findIndex((row, index) =>
+                  row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
+                );
+                // Fallback
+                if (headerRowIndex === -1 || headerRowIndex > 25) {
+                  headerRowIndex = 0;
+                }
+
+                // Convert filtered JSON back to CSV
+                var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex)); // Create a new sheet from filtered array of arrays
+                csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
+                return csv;
+            } catch (e) {
+                console.error(e);
+                return "";
+            }
+        }
+        return gk_fileData[filename] || "";
+        }
+        </script><!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document Review Portal</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Inter', sans-serif;
+        }
+
+        body {
+            background: #F5F6F5;
+            color: #333333;
+        }
+
+        /* Header */
+        header {
+            background: #000000;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            padding: 16px 32px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            position: fixed;
+            width: 100%;
+            top: 0;
+            z-index: 1000;
+        }
+        .logo {
+            font-size: 24px;
+            font-weight: bold;
+            color: #FFFFFF;
+        }
+        nav a {
+            margin-left: 20px;
+            text-decoration: none;
+            color: #FFFFFF;
+            font-size: 16px;
+        }
+        nav a:hover {
+            color: #0055A4;
+        }
+        .staging-nav {
+            display: none;
+        }
+        .staging-nav.active {
+            display: flex;
+        }
+
+        /* Landing Page */
+        .landing-page {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            text-align: center;
+            padding: 32px;
+            background: #FFFFFF;
+        }
+        .landing-page h1 {
+            font-size: 48px;
+            margin-bottom: 16px;
+        }
+        .landing-page p {
+            font-size: 18px;
+            margin-bottom: 32px;
+            max-width: 600px;
+        }
+        .landing-page img {
+            max-width: 600px;
+            width: 100%;
+            height: auto;
+            margin-bottom: 32px;
+            border-radius: 8px;
+        }
+        .login-form {
+            display: block; /* Initially visible */
+            background: #FFFFFF;
+            padding: 32px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            width: 100%;
+            max-width: 400px;
+        }
+        .login-form label {
+            display: block;
+            font-size: 16px;
+            margin-bottom: 8px;
+        }
+        .login-form input {
+            width: 100%;
+            padding: 12px;
+            margin-bottom: 16px;
+            border: 1px solid #CCC;
+            border-radius: 8px;
+            font-size: 16px;
+        }
+        .login-form button {
+            background: #0055A4;
+            color: #FFFFFF;
+            padding: 12px;
+            border: none;
+            border-radius: 8px;
+            width: 100%;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        .login-form button:hover {
+            background: #007BFF;
+        }
+        .login-form a {
+            display: block;
+            text-align: center;
+            margin-top: 16px;
+            color: #0055A4;
+            text-decoration: none;
+        }
+        .login-form a:hover {
+            text-decoration: underline;
+        }
+
+        /* Status Ribbon */
+        .status-ribbon {
+            background: #FFFFFF;
+            padding: 16px 32px;
+            margin-top: 80px;
+            display: none;
+            justify-content: center;
+            gap: 24px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .status-ribbon.active {
+            display: flex;
+        }
+        .status-item {
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-size: 16px;
+            color: #333333;
+            background: #CCC;
+            cursor: default;
+        }
+        .status-item.active {
+            background: #0055A4;
+            color: #FFFFFF;
+        }
+        .status-item.completed {
+            background: #28A745;
+            color: #FFFFFF;
+        }
+
+        /* Main Content */
+        .main-content {
+            display: none;
+            padding: 32px;
+            gap: 24px;
+            min-height: calc(100vh - 180px);
+        }
+        .main-content.active {
+            display: flex;
+        }
+
+        /* Document Area (Common) */
+        .document-area {
+            flex: 3;
+            background: #FFFFFF;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            padding: 24px;
+        }
+        .document-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+        }
+        .document-header h2 {
+            font-size: 24px;
+        }
+        .document-tools a {
+            margin-left: 16px;
+            text-decoration: none;
+            color: #0055A4;
+            font-size: 14px;
+        }
+        .document-tools .btn {
+            background: #0055A4;
+            color: #FFFFFF;
+            margin-left: 16px;
+            padding: 8px 16px;
+            border-radius: 0px;
+            border: none;
+            text-decoration: none;
+        }
+        .document-tools .btn:hover {
+            background: #007BFF;
+        }
+
+        /* Stage 1 & 2: Self Review & Peer Review */
+        .branding-options {
+            background: #FFF;
+            margin-bottom: 24px;
+            padding: 15px;
+            border: 1px solid #CCC;
+            border-radius: 8px;
+        }
+
+        .branding-options {
+            margin-bottom: 24px;
+            padding: 16px;
+            border: 1px solid #CCC;
+            border-radius: 5px;
+        }
+
+        .branding-options h3 {
+            font-size: 18px;
+            margin-bottom: 12px;
+        }
+
+        .branding-options label {
+            display: flex;
+            margin-bottom: 12px;
+            font-size: 12px;
+        }
+
+        .branding-options input[type="checkbox"] {
+            margin-right: 12px;
+        }
+        .document-content {
+            font-size: 16px;
+            line-height: 1.6;
+            margin-bottom: 24px;
+            position: relative;
+        }
+        .document-content .container {
+            max-width: none;
+            width: 100%;
+            height: auto;
+        }
+
+        .document-content .logo {
+            display: none;
+            width: 150px;
+            height: auto;
+            margin-bottom: 16px;
+        }
+        .document-content .logo.active {
+            display: block;
+        }
+        .document-content .vehicle-image {
+            max-width: 220px;
+            height: auto;
+            margin-bottom: 8px;
+            border-radius: 8px;
+            display: block;
+            margin-left: auto;
+            margin-right: auto;
+        }
+        .document-content .vehicle-caption {
+            position: relative;
+            font-size: 14px;
+            color: #666;
+            margin-bottom: 16px;
+            text-align: center;
+        }
+        .document-content .vehicle-text {
+            display: relative;
+            font-size: 16px;
+        }
+        .document-content .copyright {
+            display: none;
+            font-size: 12px;
+            color: #666;
+            margin-top: 16px;
+        }
+        .document-content .copyright.active {
+            display: block;
+        }
+        .document-text {
+            position: relative;
+            min-height: 400px;
+        }
+
+        .document-text .watermark {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%) rotate(-45deg);
+            font-size: 12px;
+            opacity: 0.3;
+            border: none;
+            pointer-events: none;
+            display: none;
+            white-space: nowrap;
+        }
+        .document-text .watermark.active {
+            display: flex;
+        }
+
+        /* Stage 2: Peer Reviews */
+        .comment-section {
+            border-top: 1px solid #ccc;
+            padding-top: 15px;
+        }
+        .comment {
+            background: none;
+            padding: 15px;
+            margin-bottom: 10px;
+            border-radius: 4px;
+        }
+        .comment p {
+            font-size: 14px;
+            margin-bottom: 0px;
+        }
+        .comment small {
+            color: #666;
+            font-size: 10px;
+        }
+        .comment-input {
+            display: flex;
+            gap: 10px;
+            margin-top: 12px;
+        }
+        .comment-input textarea {
+            width: 1px;
+            padding: 8px;
+            border-top: none;
+            border: 1px solid #CCC;
+            border-radius: 0px;
+            font-size: 14px;
+        }
+        .comment-input button {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 0px;
+            cursor: pointer;
+        }
+        .comment-input button:hover {
+            background: #007BFF;
+        }
+
+        /* Stage 3: Final Approval */
+        .checklist {
+            margin-bottom: 24px;
+        }
+        .checklist h3 {
+            font-size: 20px;
+            margin-bottom: 12px;
+        }
+        .checklist-item {
+            display: flex;
+            align-items: center;
+            padding: 12px 0;
+            border-bottom: 1px solid #CCC;
+        }
+        .checklist-item input[type="checkbox"] {
+            margin-right: 12px;
+        }
+        .checklist-item label {
+            font-size: 16px;
+        }
+        .checklist-item.completed label {
+            color: #28A745;
+            text-decoration: line-through;
+        }
+        .verification-section {
+            border-top: 1px solid #CCC;
+            padding-top: 16px;
+            margin-bottom: 24px;
+        }
+        .verification-section h3 {
+            font-size: 20px;
+            margin-bottom: 12px;
+        }
+        .verification-item {
+            display: flex;
+            align-items: center;
+            padding: 8px 0;
+        }
+        .verification-item input[type="checkbox"] {
+            margin-right: 12px;
+        }
+        .verification-item label {
+            font-size: 16px;
+        }
+
+        /* Navigation Buttons */
+        .advance-section {
+            display: flex;
+            gap: 12px;
+        }
+        .advance-section button {
+            background: #28A745;
+            color: #FFFFFF;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        .advance-section button:hover {
+            background: #218838;
+        }
+        .advance-section .back-btn {
+            background: #6C757D;
+        }
+        .advance-section .back-btn:hover {
+            background: #5A6268;
+        }
+
+        /* Side Panel (Common) */
+        .side-panel {
+            flex: 1;
+            background: #FFFFFF;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            padding: 24px;
+            max-width: 300px;
+        }
+        .side-panel h3 {
+            font-size: 20px;
+            margin-bottom: 16px;
+        }
+        .metadata-item, .revision, .status-item {
+            padding: 12px 0;
+            border-bottom: 1px solid #CCC;
+        }
+        .metadata-item p, .revision p, .status-item p {
+            font-size: 14px;
+            margin-bottom: 8px;
+        }
+        .metadata-item small, .revision small, .status-item small {
+            color: #666;
+            font-size: 12px;
+        }
+        .revision a, .status-item a {
+            color: #0055A4;
+            text-decoration: none;
+            font-size: 12px;
+        }
+        .revision a:hover, .status-item a:hover {
+            text-decoration: underline;
+        }
+
+        /* Completion Message */
+        .completion-message {
+            display: none;
+            text-align: center;
+            padding: 48px;
+            font-size: 24px;
+            color: #28A745;
+        }
+        .completion-message.active {
+            display: block;
+        }
+
+        /* Footer */
+        footer {
+            background: #333333;
+            color: #FFFFFF;
+            padding: 24px 32px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 12px;
+        }
+        .footer a {
+            color: #FFFFFF;
+            text-decoration: none;
+            margin-right: 16px;
+        }
+        footer a:hover {
+            text-decoration: underline;
+        }
+        .social-icons span {
+            margin: 0 8px;
+            font-size: 24px;
+        }
+
+        /* Responsive Design */
+        @media (max-width: 768px) {
+            .main-content {
+                flex-direction: column;
+            }
+            .side-panel {
+                max-width: 100%;
+            }
+            .document-header h2 {
+                font-size: 20px;
+            }
+            .document-content, .checklist-item label, .verification-item label {
+                font-size: 14px;
+            }
+            .document-text .watermark {
+                font-size: 6vw;
+            }
+            .status-ribbon {
+                flex-wrap: wrap;
+                gap: 12px;
+            }
+            .status-item {
+                flex: 1;
+                text-align: center;
+            }
+            .landing-page h1 {
+                font-size: 32px;
+            }
+            .landing-page p {
+                font-size: 16px;
+            }
+            .landing-page img, .document-content .vehicle-image {
+                max-width: 100%;
+            }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="logo">Document Review Portal</div>
+        <nav class="default-nav">
+            <a href="#">Home</a>
+            <a href="#">About</a>
+            <a href="#">Contact</a>
+        </nav>
+        <nav class="staging-nav" id="staging-nav">
+            <a href="#" onclick="showPage('dashboard')">Dashboard</a>
+            <a href="#" onclick="showPage('my-reviews')">My Reviews</a>
+            <a href="#" onclick="logout()">Logout</a>
+        </nav>
+    </header>
+
+    <!-- Landing Page -->
+    <div class="landing-page active" id="landing">
+        <h1>Welcome to the Document Review Portal</h1>
+        <p>Streamline your document review process with our intuitive platform. Review, comment, and approve documents in three easy stages.</p>
+        <img src="https://th.bing.com/th/id/OIP.AU99BQHECnb1IlNNYyGvdwHaEr?w=253&h=180&c=7&r=0&o=5&dpr=1.3&pid=1.7" alt="Zoox Vehicle">
+        <div class="login-form">
+            <label for="username">Username</label>
+            <input type="text" id="username" placeholder="Enter username">
+            <label for="password">Password</label>
+            <input type="password" id="password" placeholder="Enter password">
+            <button onclick="login()">Login</button>
+            <a href="#" onclick="showPage('landing')">Back to Home</a>
+        </div>
+    </div>
+
+    <!-- Status Ribbon -->
+    <div class="status-ribbon" id="status-ribbon">
+        <div class="status-item active" id="status-stage1">Stage 1: Self Review</div>
+        <div class="status-item" id="status-stage2">Stage 2: Peer Reviews</div>
+        <div class="status-item" id="status-stage3">Stage 3: Final Approval</div>
+    </div>
+
+    <!-- Stage 1: Self Review -->
+    <div class="main-content" id="stage1">
+        <div class="document-area">
+            <div class="document-header">
+                <h2>Document: Project Proposal - Self Review</h2>
+                <div class="document-tools">
+                    <a href="#">Annotate</a>
+                    <a href="#">Edit</a>
+                    <a href="#" class="btn">Preview HTML</a>
+                </div>
+            </div>
+            <div class="branding-options">
+                <h3>Branding Options</h3>
+                <label><input type="checkbox" id="watermark-toggle1" onchange="updateBranding()"> Add Watermark</label>
+                <label><input type="checkbox" id="logo-toggle1" onchange="updateBranding()"> Include Zoox Logo</label>
+                <label><input type="checkbox" id="copyright-toggle1" onchange="updateBranding()"> Add Copyright Notice</label>
+            </div>
+            <div class="document-content">
+                <img src="https://upload.wikimedia.org/wikipedia/commons/5/5d/Zoox_logo_2021.png" alt="Zoox Logo" class="logo" id="logo1">
+                <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/2/2a/Zoox_Autonomous_Vehicle.jpg/220px-Zoox_Autonomous_Vehicle.jpg" alt="Zoox Autonomous Vehicle" class="vehicle-image">
+                <div class="vehicle-caption">Zoox Autonomous Vehicle</div>
+                <div class="document-text">
+                    <div class="watermark" id="watermark1">Confidential Draft</div>
+                    <p>Zoox is an American autonomous vehicle company founded in 2014 and headquartered in Foster City, California. Zoox was acquired by Amazon in 2020 for over $1.2 billion and focuses on developing self-driving technology for mobility-as-a-service.</p>
+                    <p>Zoox began testing its autonomous vehicles in San Francisco in 2016 and expanded to Las Vegas by 2019. In 2020, Zoox unveiled its purpose-built, fully autonomous electric vehicle designed for urban mobility, featuring bidirectional driving capabilities and four-wheel steering.</p>
+                    <h1>Development and Operations</h1>
+                    <p>Zoox is creating an entirely new autonomous vehicle targeted at the robo-taxi market. The company's approach is centered around the fact that a retrofitted vehicle is not optimized for autonomy. Zoox has applied the latest techniques in automotive, robotics, and renewable energy to build a symmetrical, bi-directional battery-electric vehicle that solves for the unique challenges of autonomous mobility.</p>
+                    <p>The company has used retrofitted Toyota Highlanders with their self-driving system in final preparation for their commercial vehicle reveal in December 2020. As of July 2018, test driving was taking place in both San Francisco's Financial District and North Beach districts, as well as Las Vegas.</p>
+                    <img src="https://s.hdnux.com/photos/01/50/36/01/27385952/7/ratio3x2_1920.jpg" alt="Zoox Test Vehicle in San Francisco" class="vehicle-image">
+                    <div class="vehicle-caption">Zoox Test Vehicle in San Francisco</div>
+                </div>
+                <div class="copyright" id="copyright1">©2025 Zoox, Inc. Proprietary and Confidential. For Internal Use Only. Not For External Distribution in Any Form. All Rights Reserved. Printed Copies are Uncontrolled.</div>
+            </div>
+            <div class="advance-section">
+                <button onclick="nextStage(1, 'forward')">Advance to Stage 2</button>
+            </div>
+        </div>
+        <div class="side-panel">
+            <h3>Document Metadata</h3>
+            <div class="metadata-item">
+                <p>Document Title: Project Proposal</p>
+                <small>Author: Jane Doe</small>
+            </div>
+            <div class="metadata-item">
+                <p>Status: In Self Review</p>
+                <small>Updated: 2025-06-03 02:10 PM</small>
+            </div>
+            <div class="metadata-item">
+                <p>DITA Source: project_proposal.dita</p>
+                <small>Converted to HTML: 2025-06-03 10:00 AM</small>
+            </div>
+        </div>
+    </div>
+
+    <!-- Stage 2: Peer Reviews -->
+    <div class="main-content" id="stage2">
+        <div class="document-area">
+            <div class="document-header">
+                <h2>Document: Project Proposal - Peer Reviews</h2>
+                <div class="document-tools">
+                    <a href="#">Suggest Edit</a>
+                    <a href="#">Notify Peers</a>
+                    <a href="#" class="btn">Assign Reviewer</a>
+                </div>
+            </div>
+            <div class="document-content">
+                <img src="https://upload.wikimedia.org/wikipedia/commons/5/5d/Zoox_logo_2021.png" alt="Zoox Logo" class="logo" id="logo2">
+                <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/2/2a/Zoox_Autonomous_Vehicle.jpg/220px-Zoox_Autonomous_Vehicle.jpg" alt="Zoox Autonomous Vehicle" class="vehicle-image">
+                <div class="vehicle-caption">Zoox Autonomous Vehicle</div>
+                <div class="document-text">
+                    <div class="watermark" id="watermark2">Confidential Draft</div>
+                    <p>Zoox is an American autonomous vehicle company founded in 2014 and headquartered in Foster City, California. Zoox was acquired by Amazon in 2020 for over $1.2 billion and focuses on developing self-driving technology for mobility-as-a-service.</p>
+                    <p>Zoox began testing its autonomous vehicles in San Francisco in 2016 and expanded to Las Vegas by 2019. In 2020, Zoox unveiled its purpose-built, fully autonomous electric vehicle designed for urban mobility, featuring bidirectional driving capabilities and four-wheel steering.</p>
+                    <h1>Development and Operations</h1>
+                    <p>Zoox is creating an entirely new autonomous vehicle targeted at the robo-taxi market. [Highlighted Text: Suggest Edit] Replace 'robo-taxi market' with 'autonomous ride-hailing market' for clarity. The company's approach is centered around the fact that a retrofitted vehicle is not optimized for autonomy. Zoox has applied the latest techniques in automotive, robotics, and renewable energy to build a symmetrical, bi-directional battery-electric vehicle that solves for the unique challenges of autonomous mobility.</p>
+                    <p>The company has used retrofitted Toyota Highlanders with their self-driving system in final preparation for their commercial vehicle reveal in December 2020. As of July 2018, test driving was taking place in both San Francisco's Financial District and North Beach districts, as well as Las Vegas.</p>
+                    <img src="https://s.hdnux.com/photos/01/50/36/01/27385952/7/ratio3x2_1920.jpg" alt="Zoox Test Vehicle in San Francisco" class="vehicle-image">
+                    <div class="vehicle-caption">Zoox Test Vehicle in San Francisco</div>
+                </div>
+                <div class="copyright" id="copyright2">©2025 Zoox, Inc. Proprietary and Confidential. For Internal Use Only. Not For External Distribution in Any Form. All Rights Reserved. Printed Copies are Uncontrolled.</div>
+            </div>
+            <div class="comment-section">
+                <h3>Comments</h3>
+                <div class="comment">
+                    <p>Consider adding more details about the acquisition by Amazon.</p>
+                    <small>Jane Doe, 2025-06-03 10:00 AM</small>
+                    <a href="#">Resolve</a>
+                </div>
+                <div class="comment">
+                    <p>The section on vehicle features could use more technical specs.</p>
+                    <small>John Smith, 2025-06-03 11:00 AM</small>
+                    <a href="#">Resolve</a>
+                </div>
+                <div class="comment-input">
+                    <textarea placeholder="Add a comment..."></textarea>
+                    <button onclick="submitComment()">Submit</button>
+                </div>
+            </div>
+            <div class="advance-section">
+                <button class="back-btn" onclick="nextStage(2, 'back')">Back to Stage 1</button>
+                <button onclick="nextStage(2, 'forward')">Advance to Stage 3</button>
+            </div>
+        </div>
+        <div class="side-panel">
+            <h3>Revision History</h3>
+            <div class="revision">
+                <p>Version 1.2: Updated introduction</p>
+                <small>Jane Doe, 2025-06-03 9:00 AM</small>
+                <a href="#">View Diff</a>
+            </div>
+            <div class="revision">
+                <p>Version 1.1: Added section 2</p>
+                <small>John Smith, 2025-06-02 3:00 PM</small>
+                <a href="#">View Diff</a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Stage 3: Final Approval -->
+    <div class="main-content" id="stage3">
+        <div class="document-area">
+            <div class="document-header">
+                <h2>Document: Project Proposal - Final Approval</h2>
+                <div class="document-tools">
+                    <a href="#">Add Stakeholder</a>
+                    <a href="#" class="btn">Notify All</a>
+                </div>
+            </div>
+            <div class="checklist">
+                <h3>Reviewer Approvals</h3>
+                <div class="checklist-item completed">
+                    <input type="checkbox" checked disabled>
+                    <label>Jane Doe (Reviewer)</label>
+                </div>
+                <div class="checklist-item">
+                    <input type="checkbox">
+                    <label>John Smith (Reviewer)</label>
+                </div>
+                <div class="checklist-item">
+                    <input type="checkbox">
+                    <label>Alice Johnson (Stakeholder)</label>
+                </div>
+            </div>
+            <div class="verification-section">
+                <h3>Documentation Lead Verification</h3>
+                <div class="verification-item">
+                    <input type="checkbox">
+                    <label>Merge Status Verified</label>
+                </div>
+                <div class="verification-item">
+                    <input type="checkbox">
+                    <label>PR Approval Confirmed</label>
+                </div>
+                <div class="verification-item">
+                    <input type="checkbox">
+                    <label>Bamboo CI/CD Execution Completed</label>
+                </div>
+            </div>
+            <div class="advance-section">
+                <button class="back-btn" onclick="nextStage(3, 'back')">Back to Stage 2</button>
+                <button onclick="nextStage(3, 'forward')">Close Task</button>
+            </div>
+        </div>
+        <div class="side-panel">
+            <h3>Task Status</h3>
+            <div class="status-item">
+                <p>Task Status: In Progress</p>
+                <small>Updated: 2025-06-03 02:10 PM</small>
+            </div>
+            <div class="status-item">
+                <p>Email Notification: Pending</p>
+                <small>To: Author (author@example.com)</small>
+                <a href="#">Preview Email</a>
+            </div>
+            <div class="status-item">
+                <p>Archive Status: Not Archived</p>
+                <small>Will be archived upon closure</small>
+                <a href="#">View Archive</a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Completion Message -->
+    <div class="main-content" id="completion">
+        <div class="document-area">
+            <div class="completion-message active">
+                Task Completed! Document has been closed and archived.
+                <div class="advance-section">
+                    <button class="back-btn" onclick="nextStage(4, 'back')">Back to Stage 3</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <footer>
+        <div>
+            <a href="#">About</a>
+            <a href="#">Contact</a>
+            <a href="#">Privacy Policy</a>
+        </div>
+        <div class="social-icons">
+            <span>[LinkedIn]</span>
+            <span>[Twitter]</span>
+        </div>
+        <div>© 2025 Document Review Portal</div>
+    </footer>
+
+    <script>
+        // State to track branding options
+        let brandingOptions = {
+            watermark: false,
+            logo: false,
+            copyright: false
+        };
+
+        function updateBranding() {
+            // Update state based on checkboxes in Stage 1
+            brandingOptions.watermark = document.getElementById('watermark-toggle1').checked;
+            brandingOptions.logo = document.getElementById('logo-toggle1').checked;
+            brandingOptions.copyright = document.getElementById('copyright-toggle1').checked;
+
+            // Apply to Stage 1
+            document.getElementById('watermark1').classList.toggle('active', brandingOptions.watermark);
+            document.getElementById('logo1').classList.toggle('active', brandingOptions.logo);
+            document.getElementById('copyright1').classList.toggle('active', brandingOptions.copyright);
+
+            // Apply to Stage 2
+            document.getElementById('watermark2').classList.toggle('active', brandingOptions.watermark);
+            document.getElementById('logo2').classList.toggle('active', brandingOptions.logo);
+            document.getElementById('copyright2').classList.toggle('active', brandingOptions.copyright);
+        }
+
+        function submitComment() {
+            const commentText = document.querySelector('#stage2 .comment-input textarea').value;
+            if (commentText.trim()) {
+                const commentSection = document.querySelector('#stage2 .comment-section');
+                const newComment = document.createElement('div');
+                newComment.className = 'comment';
+                newComment.innerHTML = `<p>${commentText}</p><small>Current User, ${new Date().toLocaleString('en-US', { timeZone: 'America/Los_Angeles' })}</small><a href="#">Resolve</a>`;
+                commentSection.insertBefore(newComment, commentSection.querySelector('.comment-input'));
+                document.querySelector('#stage2 .comment-input textarea').value = '';
+            }
+        }
+
+        function showPage(pageId) {
+            // Hide all pages
+            document.querySelectorAll('.landing-page, .main-content').forEach(el => el.classList.remove('active'));
+            document.getElementById('status-ribbon').classList.remove('active');
+            document.querySelector('.default-nav').classList.add('active');
+            document.getElementById('staging-nav').classList.remove('active');
+
+            // Show selected page
+            if (pageId === 'landing') {
+                document.getElementById('landing').classList.add('active');
+            } else if (['stage1', 'stage2', 'stage3', 'completion', 'dashboard', 'my-reviews'].includes(pageId)) {
+                document.getElementById(pageId === 'completion' ? 'completion' : pageId).classList.add('active');
+                document.getElementById('status-ribbon').classList.add('active');
+                document.querySelector('.default-nav').classList.remove('active');
+                document.getElementById('staging-nav').classList.add('active');
+
+                // Apply branding options when showing Stage 2
+                if (pageId === 'stage2') {
+                    document.getElementById('watermark2').classList.toggle('active', brandingOptions.watermark);
+                    document.getElementById('logo2').classList.toggle('active', brandingOptions.logo);
+                    document.getElementById('copyright2').classList.toggle('active', brandingOptions.copyright);
+                }
+            }
+        }
+
+        function login() {
+            // Simple login simulation (no validation for demo)
+            showPage('stage1');
+        }
+
+        function logout() {
+            // Reset to landing page and clear branding options
+            brandingOptions = { watermark: false, logo: false, copyright: false };
+            document.getElementById('watermark-toggle1').checked = false;
+            document.getElementById('logo-toggle1').checked = false;
+            document.getElementById('copyright-toggle1').checked = false;
+            showPage('landing');
+        }
+
+        function nextStage(currentStage, direction) {
+            // Hide all stages and completion message
+            document.querySelectorAll('.main-content').forEach(el => el.classList.remove('active'));
+            // Reset status ribbon
+            document.querySelectorAll('.status-item').forEach(el => el.classList.remove('active', 'completed'));
+
+            if (direction === 'forward') {
+                if (currentStage === 1) {
+                    showPage('stage2');
+                    document.getElementById('status-stage1').classList.add('completed');
+                    document.getElementById('status-stage2').classList.add('active');
+                } else if (currentStage === 2) {
+                    showPage('stage3');
+                    document.getElementById('status-stage1').classList.add('completed');
+                    document.getElementById('status-stage2').classList.add('completed');
+                    document.getElementById('status-stage3').classList.add('active');
+                } else if (currentStage === 3) {
+                    showPage('completion');
+                    document.getElementById('status-stage1').classList.add('completed');
+                    document.getElementById('status-stage2').classList.add('completed');
+                    document.getElementById('status-stage3').classList.add('completed');
+                }
+            } else if (direction === 'back') {
+                if (currentStage === 2) {
+                    showPage('stage1');
+                    document.getElementById('status-stage1').classList.add('active');
+                } else if (currentStage === 3) {
+                    showPage('stage2');
+                    document.getElementById('status-stage1').classList.add('completed');
+                    document.getElementById('status-stage2').classList.add('active');
+                } else if (currentStage === 4) {
+                    showPage('stage3');
+                    document.getElementById('status-stage1').classList.add('completed');
+                    document.getElementById('status-stage2').classList.add('completed');
+                    document.getElementById('status-stage3').classList.add('active');
+                }
+            }
+        }
+
+        // Initialize with landing page active
+        window.onload = function() {
+            showPage('landing');
+        };
+    </script>
+</body>
+</html>
